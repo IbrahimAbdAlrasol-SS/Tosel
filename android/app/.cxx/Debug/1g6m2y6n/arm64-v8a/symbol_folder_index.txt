@@ -1,0 +1,1 @@
+F:\Flutter_Projects\provider_strucutre2\provider_strucutre\build\app\intermediates\cxx\Debug\1g6m2y6n\obj\arm64-v8a
