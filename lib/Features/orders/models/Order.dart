@@ -55,7 +55,7 @@ class Order {
       // this.additionalExpenses,
       this.id,
       this.deleted,
-      this.creationDate});
+      this.creationDate, required Future<Object?> Function() onTap});
 
   Order.fromJson(Map<String, dynamic> json) {
     code = json['code'];

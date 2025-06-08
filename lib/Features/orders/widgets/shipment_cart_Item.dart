@@ -18,6 +18,8 @@ import 'package:Tosell/Features/orders/widgets/order_card_item.dart';
 import 'package:Tosell/Features/orders/providers/orders_provider.dart';
 import 'package:Tosell/Features/orders/screens/orders_filter_bottom_sheet.dart';
 // Import for shipments
+import 'package:Tosell/Features/shipments/models/Shipment.dart';
+import 'package:Tosell/Features/shipments/providers/shipments_provider.dart';
 
 class MainOrdersWithTabsScreen extends ConsumerStatefulWidget {
   final OrderFilter? filter;
@@ -64,6 +66,7 @@ class _MainOrdersWithTabsScreenState extends ConsumerState<MainOrdersWithTabsScr
         page: 1,
         queryParams: _currentFilter?.toJson(),
       );
+      // Fetch shipments
       ref.read(shipmentsNotifierProvider.notifier).getAll(
         page: 1,
         queryParams: _currentFilter?.toJson(),
@@ -219,7 +222,9 @@ class _MainOrdersWithTabsScreenState extends ConsumerState<MainOrdersWithTabsScr
                   _tabController.index == 0
                       ? (_currentFilter == null || _currentFilter!.status == null
                           ? 'جميع الطلبات'
-                          : 'جميع الطلبات "${orderStatus[_currentFilter!.status!].name}"')
+                          : _currentFilter!.shipmentCode != null 
+                              ? 'جميع الطلبات "${_currentFilter!.shipmentCode}"'
+                              : 'جميع الطلبات "${orderStatus[_currentFilter!.status!].name}"')
                       : (_currentFilter == null || _currentFilter!.status == null
                           ? 'جميع الوصولات'
                           : 'جميع الوصولات "${orderStatus[_currentFilter!.status!].name}"'),
@@ -296,8 +301,16 @@ class _MainOrdersWithTabsScreenState extends ConsumerState<MainOrdersWithTabsScr
           queryParams: _currentFilter?.toJson(),
         );
       },
-      itemBuilder: (context, shipment, index) => ShipmentCartItem(
-        shipment: shipment,
+      itemBuilder: (context, shipment, index) => OrderCardItem(
+        order: Order(
+          id: shipment.id,
+          code: shipment.code,
+          status: shipment.status,
+          creationDate: shipment.creationDate,
+          customerName: 'وصل ${shipment.code}',
+          content: 'عدد الطلبات: ${shipment.ordersCount ?? 0}',
+          deliveryZone: null,
+        ),
         onTap: () => context.push(AppRoutes.orders,
             extra: OrderFilter(
                 shipmentId: shipment.id, 
