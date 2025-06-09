@@ -1,4 +1,3 @@
-
 class Shipment {
   String? code;
   int? type;

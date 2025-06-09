@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:Tosell/Features/orders/screens/shipment_orders_screen.dart';
+
 import 'package:Tosell/Features/navigation.dart';
 import 'package:Tosell/Features/orders/models/Order.dart';
 import 'package:Tosell/Features/splash/splash_screen.dart';
@@ -105,6 +107,16 @@ final GoRouter appRouter = GoRouter(
         ),
       ),
     ),
+
+    GoRoute(
+  path: AppRoutes.shipmentOrders,
+  builder: (context, state) => BackgroundWrapper(
+    child: ShipmentOrdersScreen(
+      shipmentId: (state.extra as Map<String, dynamic>)['shipmentId'],
+      shipmentCode: (state.extra as Map<String, dynamic>)['shipmentCode'],
+    ),
+  ),
+),
     GoRoute(
       path: AppRoutes.registerScreen,
       builder: (context, state) => const BackgroundWrapper(child: RegisterScreen()),
@@ -268,4 +280,6 @@ class AppRoutes {
   static const String ForgotPasswordAuth = '/ForgotpasswordAuth';
   static const String ForgotpasswordnumbernamePass =
       '/ForgotPasswordNumberNamePass';
+  static const String shipmentOrders = '/shipment-orders';
+
 }

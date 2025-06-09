@@ -8,7 +8,7 @@ class ProfileService {
 
   ProfileService()
       : baseClient = BaseClient<User>(fromJson: (json) => User.fromJson(json));
-
+// Compare this snippet from orders_service.dart:    افهم شلون كاعد تشتغل حته تسويها 
   FutureOr<(User?, String?)> updateUser({required User user}) async {
     try {
       if (user.img != null && user.img!.isNotEmpty) {

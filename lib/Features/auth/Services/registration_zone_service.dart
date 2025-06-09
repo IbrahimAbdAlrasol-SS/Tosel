@@ -1,4 +1,3 @@
-import 'package:Tosell/core/widgets/custom_search_drop_down.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -6,9 +5,9 @@ import 'package:Tosell/core/constants/spaces.dart';
 import 'package:Tosell/core/utils/extensions.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:Tosell/core/widgets/CustomTextFormField.dart';
+import 'package:Tosell/core/widgets/custom_search_drop_down.dart';
 import 'package:Tosell/Features/auth/register/models/registration_zone.dart';
 import 'package:Tosell/Features/auth/register/services/registration_zone_service.dart';
-
 class DeliveryInfoTab extends StatefulWidget {
   const DeliveryInfoTab({super.key});
 
@@ -416,7 +415,6 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
   }
 }
 
-/// كلاس لحفظ بيانات موقع التوصيل
 class DeliveryLocation {
   RegistrationGovernorate? selectedGovernorate;
   RegistrationZone? selectedZone;
