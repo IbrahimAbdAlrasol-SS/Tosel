@@ -1,4 +1,3 @@
-import 'package:Tosell/core/widgets/custom_search_drop_down.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -22,6 +21,10 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
   
   // خدمة البحث في المناطق
   final RegistrationZoneService _zoneService = RegistrationZoneService();
+  
+  // ✅ تتبع آخر بحث لكل dropdown لتحسين الـ force refresh
+  Map<int, String?> _lastGovernorateQuery = {};
+  Map<int, String?> _lastZoneQuery = {};
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +46,9 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
 
             const SizedBox(height: 12),
             _buildAddLocationButton(),
+            const Gap(8),
+            // ✅ زر التحديث الشامل
+            _buildRefreshButton(),
           ],
         ),
       ),
@@ -142,22 +148,52 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
       hint: "ابحث عن المحافظة... مثال: 'بغداد'",
       selectedValue: deliveryLocations[index].selectedGovernorate,
       itemAsString: (gov) => gov.name ?? '',
-      asyncItems: (query) => _zoneService.getGovernorates(query: query),
+      asyncItems: (query) async {
+        // ✅ Force refresh في أول بحث أو عند تغيير الـ query بشكل كبير
+        final shouldForceRefresh = query.length == 1 || 
+            (_lastGovernorateQuery[index] != null && 
+             (_lastGovernorateQuery[index]!.isEmpty || 
+              !query.startsWith(_lastGovernorateQuery[index]!)));
+        
+        _lastGovernorateQuery[index] = query;
+        
+        return await _zoneService.getGovernorates(
+          query: query, 
+          forceRefresh: shouldForceRefresh,
+        );
+      },
       onChanged: (governorate) {
         setState(() {
           deliveryLocations[index].selectedGovernorate = governorate;
           deliveryLocations[index].selectedZone = null; // إعادة تعيين المنطقة
+          _lastZoneQuery[index] = null; // مسح آخر بحث للمناطق
         });
+        
+        // ✅ مسح cache المناطق عند تغيير المحافظة
+        if (governorate != null) {
+          _zoneService.clearCache();
+        }
       },
-      itemBuilder: (context, governorate) => Text(
-        governorate.name ?? '',
-        style: const TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
-        ),
+      itemBuilder: (context, governorate) => Row(
+        children: [
+          Icon(
+            Icons.location_city,
+            color: context.colorScheme.primary,
+            size: 18,
+          ),
+          const Gap(8),
+          Text(
+            governorate.name ?? '',
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+            ),
+          ),
+        ],
       ),
       emptyText: "لا توجد محافظات مطابقة",
       errorText: "خطأ في تحميل المحافظات",
+      enableRefresh: true, // ✅ تمكين الـ refresh
     );
   }
 
@@ -173,9 +209,19 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
       itemAsString: (zone) => zone.name ?? '',
       asyncItems: (query) async {
         if (selectedGov?.id == null) return [];
+        
+        // ✅ Force refresh في أول بحث أو عند تغيير الـ query بشكل كبير
+        final shouldForceRefresh = query.length == 1 || 
+            (_lastZoneQuery[index] != null && 
+             (_lastZoneQuery[index]!.isEmpty || 
+              !query.startsWith(_lastZoneQuery[index]!)));
+        
+        _lastZoneQuery[index] = query;
+        
         return await _zoneService.getZonesByGovernorate(
           governorateId: selectedGov!.id!,
           query: query,
+          forceRefresh: shouldForceRefresh,
         );
       },
       onChanged: (zone) {
@@ -186,20 +232,36 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
       itemBuilder: (context, zone) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            zone.name ?? '',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 16,
-            ),
+          Row(
+            children: [
+              Icon(
+                Icons.place,
+                color: context.colorScheme.primary,
+                size: 18,
+              ),
+              const Gap(8),
+              Expanded(
+                child: Text(
+                  zone.name ?? '',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
           ),
           if (zone.governorate?.name != null) ...[
-            const Gap(2),
-            Text(
-              zone.governorate!.name!,
-              style: TextStyle(
-                color: context.colorScheme.secondary,
-                fontSize: 12,
+            const Gap(4),
+            Padding(
+              padding: const EdgeInsets.only(right: 26),
+              child: Text(
+                '📍 ${zone.governorate!.name!}',
+                style: TextStyle(
+                  color: context.colorScheme.secondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ),
           ],
@@ -209,6 +271,7 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
           ? "اختر المحافظة أولاً"
           : "لا توجد مناطق مطابقة",
       errorText: "خطأ في تحميل المناطق",
+      enableRefresh: true, // ✅ تمكين الـ refresh
     );
   }
 
@@ -371,8 +434,15 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
       deliveryLocations.removeAt(index);
       expandedTiles.remove(index);
       
+      // ✅ تنظيف بيانات البحث المحفوظة
+      _lastGovernorateQuery.remove(index);
+      _lastZoneQuery.remove(index);
+      
       // إعادة ترتيب المؤشرات
       final newExpandedTiles = <int>{};
+      final newGovernorateQuery = <int, String?>{};
+      final newZoneQuery = <int, String?>{};
+      
       for (final expandedIndex in expandedTiles) {
         if (expandedIndex > index) {
           newExpandedTiles.add(expandedIndex - 1);
@@ -380,8 +450,106 @@ class _DeliveryInfoTabState extends State<DeliveryInfoTab> {
           newExpandedTiles.add(expandedIndex);
         }
       }
+      
+      // إعادة ترتيب بيانات البحث
+      _lastGovernorateQuery.forEach((key, value) {
+        if (key > index) {
+          newGovernorateQuery[key - 1] = value;
+        } else if (key < index) {
+          newGovernorateQuery[key] = value;
+        }
+      });
+      
+      _lastZoneQuery.forEach((key, value) {
+        if (key > index) {
+          newZoneQuery[key - 1] = value;
+        } else if (key < index) {
+          newZoneQuery[key] = value;
+        }
+      });
+      
       expandedTiles = newExpandedTiles;
+      _lastGovernorateQuery = newGovernorateQuery;
+      _lastZoneQuery = newZoneQuery;
     });
+    
+    print('🗑️ تم حذف الموقع $index وتنظيف بياناته');
+  }
+
+  /// تحديث شامل لجميع البيانات
+  Future<void> _refreshAllData() async {
+    print('🔄 بدء تحديث شامل للبيانات...');
+    
+    try {
+      // مسح كل الـ cache
+      _zoneService.clearCache();
+      _lastGovernorateQuery.clear();
+      _lastZoneQuery.clear();
+      
+      // إعادة تحميل البيانات
+      await _zoneService.refreshData();
+      
+      // إظهار رسالة نجاح
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                const Gap(8),
+                Text('تم تحديث البيانات بنجاح'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      
+      print('✅ تم التحديث الشامل بنجاح');
+    } catch (e) {
+  Widget _buildRefreshButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          width: 120.w,
+          height: 32.h,
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(60),
+            border: Border.all(color: Colors.blue),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(60),
+            onTap: _refreshAllData,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.refresh,
+                    color: Colors.blue,
+                    size: 16,
+                  ),
+                  const Gap(4),
+                  Text(
+                    "تحديث البيانات",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openLocationPicker() {

@@ -15,6 +15,7 @@ class RegistrationSearchDropDown<T> extends StatefulWidget {
   final Widget Function(BuildContext, T)? itemBuilder;
   final String emptyText;
   final String errorText;
+  final bool enableRefresh; // ✅ إضافة refresh option
 
   const RegistrationSearchDropDown({
     super.key,
@@ -28,6 +29,7 @@ class RegistrationSearchDropDown<T> extends StatefulWidget {
     this.itemBuilder,
     this.emptyText = "لا توجد نتائج",
     this.errorText = "حدث خطأ أثناء البحث",
+    this.enableRefresh = true, // ✅ افتراضياً مفعل
   });
 
   @override
@@ -47,6 +49,7 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
   bool _hasError = false;
   T? _selectedItem;
   Timer? _debounceTimer;
+  String _lastQuery = '';
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -59,17 +62,20 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
       _controller.text = widget.itemAsString(_selectedItem!);
     }
     
+    _setupAnimations();
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _setupAnimations() {
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 250),
       vsync: this,
     );
     
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
-      curve: Curves.easeOut,
+      curve: Curves.easeOutCubic,
     );
-    
-    _focusNode.addListener(_onFocusChanged);
   }
 
   @override
@@ -85,11 +91,13 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
   void _onFocusChanged() {
     if (_focusNode.hasFocus) {
       _showSuggestions();
-      if (_controller.text.isNotEmpty) {
-        _onTextChanged(_controller.text);
+      // ✅ بحث فوري عند التركيز إذا كان هناك نص
+      final currentText = _controller.text.trim();
+      if (currentText.isNotEmpty) {
+        _searchItems(currentText, immediate: true);
       }
     } else {
-      Future.delayed(const Duration(milliseconds: 150), () {
+      Future.delayed(const Duration(milliseconds: 200), () {
         if (!_focusNode.hasFocus) {
           _hideSuggestions();
         }
@@ -98,11 +106,25 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
   }
 
   void _onTextChanged(String value) {
+    final trimmedValue = value.trim();
+    
+    // ✅ مسح النتائج فوراً عند تغيير النص
+    if (trimmedValue != _lastQuery) {
+      setState(() {
+        _suggestions = [];
+        _hasError = false;
+      });
+      _updateOverlay();
+    }
+    
     _debounceTimer?.cancel();
     
-    if (value.isNotEmpty) {
-      _debounceTimer = Timer(const Duration(milliseconds: 400), () {
-        _searchItems(value);
+    if (trimmedValue.isNotEmpty) {
+      setState(() => _isLoading = true);
+      
+      // ✅ تقليل زمن التأخير للاستجابة الأسرع
+      _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+        _searchItems(trimmedValue);
       });
     } else {
       setState(() {
@@ -112,28 +134,37 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
       });
       _updateOverlay();
     }
+    
+    _lastQuery = trimmedValue;
   }
 
-  Future<void> _searchItems(String query) async {
-    if (!mounted) return;
+  Future<void> _searchItems(String query, {bool immediate = false}) async {
+    if (!mounted || query.trim().isEmpty) return;
 
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
+    if (!immediate) {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+      });
+    }
 
     try {
+      print('🔍 بحث فوري: "$query"');
       final results = await widget.asyncItems(query);
-      if (mounted) {
+      
+      if (mounted && query == _controller.text.trim()) {
         setState(() {
           _suggestions = results;
           _isLoading = false;
           _hasError = false;
         });
         _updateOverlay();
+        
+        print('✅ نتائج البحث: ${results.length} عنصر');
       }
     } catch (e) {
-      if (mounted) {
+      print('❌ خطأ في البحث: $e');
+      if (mounted && query == _controller.text.trim()) {
         setState(() {
           _suggestions = [];
           _isLoading = false;
@@ -182,19 +213,34 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
     setState(() {
       _selectedItem = item;
       _controller.text = widget.itemAsString(item);
+      _suggestions = []; // ✅ مسح النتائج بعد الاختيار
     });
     widget.onChanged(item);
     _focusNode.unfocus();
     _hideSuggestions();
+    
+    print('✅ تم اختيار: ${widget.itemAsString(item)}');
   }
 
   void _clearSelection() {
     setState(() {
       _selectedItem = null;
       _controller.clear();
+      _suggestions = []; // ✅ مسح النتائج عند المسح
+      _lastQuery = '';
     });
     widget.onChanged(null);
     _focusNode.requestFocus();
+    
+    print('🗑️ تم مسح الاختيار');
+  }
+
+  // ✅ دالة للتحديث اليدوي
+  Future<void> _manualRefresh() async {
+    if (_controller.text.trim().isNotEmpty) {
+      print('🔄 تحديث يدوي للبحث');
+      await _searchItems(_controller.text.trim(), immediate: true);
+    }
   }
 
   @override
@@ -277,21 +323,44 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
       );
     }
 
-    if (_selectedItem != null) {
-      return IconButton(
-        onPressed: _clearSelection,
-        icon: Icon(
-          Icons.clear,
-          color: context.colorScheme.secondary,
-          size: 20,
-        ),
-      );
-    }
-
-    return Icon(
-      Icons.search,
-      color: context.colorScheme.primary,
-      size: 24,
+    // ✅ عرض أيقونات متعددة
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ✅ أيقونة التحديث (إذا كان مفعل وهناك نص)
+        if (widget.enableRefresh && _controller.text.trim().isNotEmpty)
+          IconButton(
+            onPressed: _manualRefresh,
+            icon: Icon(
+              Icons.refresh,
+              color: context.colorScheme.primary,
+              size: 20,
+            ),
+            tooltip: 'تحديث النتائج',
+          ),
+        
+        // ✅ أيقونة المسح (إذا كان هناك اختيار)
+        if (_selectedItem != null)
+          IconButton(
+            onPressed: _clearSelection,
+            icon: Icon(
+              Icons.clear,
+              color: context.colorScheme.secondary,
+              size: 20,
+            ),
+            tooltip: 'مسح الاختيار',
+          )
+        else
+          // ✅ أيقونة البحث (إذا لم يكن هناك اختيار)
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Icon(
+              Icons.search,
+              color: context.colorScheme.primary,
+              size: 20,
+            ),
+          ),
+      ],
     );
   }
 
@@ -332,16 +401,23 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                context.colorScheme.primary,
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  context.colorScheme.primary,
+                ),
               ),
             ),
-            const Gap(8),
+            const Gap(12),
             Text(
               'جاري البحث...',
-              style: TextStyle(color: context.colorScheme.secondary),
+              style: TextStyle(
+                color: context.colorScheme.secondary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -354,12 +430,29 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: Colors.red),
+            Icon(
+              Icons.error_outline,
+              color: Colors.red,
+              size: 28,
+            ),
             const Gap(8),
             Text(
               widget.errorText,
-              style: const TextStyle(color: Colors.red),
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w500,
+              ),
               textAlign: TextAlign.center,
+            ),
+            // ✅ زر إعادة المحاولة
+            const Gap(8),
+            TextButton.icon(
+              onPressed: () => _searchItems(_controller.text.trim()),
+              icon: Icon(Icons.refresh, size: 16),
+              label: Text('إعادة المحاولة'),
+              style: TextButton.styleFrom(
+                foregroundColor: context.colorScheme.primary,
+              ),
             ),
           ],
         ),
@@ -372,54 +465,37 @@ class _RegistrationSearchDropDownState<T> extends State<RegistrationSearchDropDo
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off, color: context.colorScheme.secondary),
+            Icon(
+              Icons.search_off,
+              color: context.colorScheme.secondary,
+              size: 28,
+            ),
             const Gap(8),
             Text(
               widget.emptyText,
-              style: TextStyle(color: context.colorScheme.secondary),
+              style: TextStyle(
+                color: context.colorScheme.secondary,
+                fontWeight: FontWeight.w500,
+              ),
               textAlign: TextAlign.center,
             ),
+            // ✅ مؤشر للبحث الحالي
+            if (_controller.text.trim().isNotEmpty) ...[
+              const Gap(4),
+              Text(
+                'البحث عن: "${_controller.text.trim()}"',
+                style: TextStyle(
+                  color: context.colorScheme.secondary.withOpacity(0.7),
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       );
     }
 
-    return ListView.separated(
-      shrinkWrap: true,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: _suggestions.length,
-      separatorBuilder: (context, index) => Divider(
-        height: 1,
-        color: context.colorScheme.outline.withOpacity(0.2),
-        indent: 12,
-        endIndent: 12,
-      ),
-      itemBuilder: (context, index) {
-        final item = _suggestions[index];
-        final isSelected = _selectedItem == item;
-        
-        return InkWell(
-          onTap: () => _selectItem(item),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: isSelected 
-                  ? context.colorScheme.primary.withOpacity(0.1)
-                  : null,
-            ),
-            child: widget.itemBuilder?.call(context, item) ??
-                Text(
-                  widget.itemAsString(item),
-                  style: TextStyle(
-                    color: isSelected 
-                        ? context.colorScheme.primary
-                        : Colors.black87,
-                    fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
-                  ),
-                ),
-          ),
-        );
-      },
-    );
+    return _buildSuggestionsListView();
   }
 }
