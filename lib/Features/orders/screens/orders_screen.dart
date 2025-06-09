@@ -18,6 +18,7 @@ import 'package:Tosell/Features/orders/models/OrderFilter.dart';
 import 'package:Tosell/Features/orders/widgets/order_card_item.dart';
 import 'package:Tosell/Features/orders/providers/orders_provider.dart';
 import 'package:Tosell/Features/orders/screens/orders_filter_bottom_sheet.dart';
+// Import for shipments
 import 'package:Tosell/Features/orders/models/Shipment.dart';
 import 'package:Tosell/Features/orders/providers/shipments_provider.dart';
 import 'package:Tosell/Features/orders/services/shipments_service.dart';
@@ -58,10 +59,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     _tabController = TabController(length: 2, vsync: this);
     _fetchInitialData();
 
+    // Listen to tab changes
     _tabController.addListener(() {
-      if (_tabController.indexIsChanging) {
+      if (_tabController.indexIsChanging || _tabController.index != _tabController.previousIndex) {
         setState(() {
           _searchController.clear();
+          // Exit multi-select mode when switching tabs
           if (_isMultiSelectMode) {
             _exitMultiSelectMode();
           }
@@ -79,10 +82,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
 
   void _fetchInitialData() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Fetch orders
       ref.read(ordersNotifierProvider.notifier).getAll(
             page: 1,
             queryParams: _currentFilter?.toJson(),
           );
+      // Fetch shipments
       ref.read(shipmentsNotifierProvider.notifier).getAll(
             page: 1,
             queryParams: _currentFilter?.toJson(),
@@ -148,6 +153,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   }
 
   void _toggleOrderSelection(String orderId) {
+    print('Toggling order selection for ID: $orderId');
     setState(() {
       if (_selectedOrderIds.contains(orderId)) {
         _selectedOrderIds.remove(orderId);
@@ -159,10 +165,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
           _isSelectAll = true;
         }
       }
+      print('Currently selected IDs: $_selectedOrderIds');
     });
   }
 
   Future<void> _sendShipment() async {
+    print('=== Starting shipment creation ===');
+    print('Selected order IDs: $_selectedOrderIds');
+    
     if (_selectedOrderIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -177,32 +187,54 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
+      builder: (BuildContext context) => WillPopScope(
+        onWillPop: () async => false,
+        child: Container(
+          color: Colors.black.withOpacity(0.5),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
       ),
     );
 
     try {
-      // Create shipment with selected order IDs
+      // Create shipment data according to API specification
+      final orders = _selectedOrderIds.map((orderId) => {
+        'orderId': orderId,
+      }).toList();
+
       final shipmentData = {
-        'type': 0, // Pickup type
-        'orderIds': _selectedOrderIds.toList(),
+        'delivered': false,
+        'orders': orders,
       };
+      
+      print('Sending shipment data: $shipmentData');
 
       final shipmentsService = ShipmentsService();
       final result = await shipmentsService.createPickupShipment(shipmentData);
+      
+      print('Shipment result: ${result.$1}, Error: ${result.$2}');
 
       // Hide loading dialog
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
 
       if (result.$1 != null) {
         // Success
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('تم إنشاء الشحنة بنجاح'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        print('Shipment created successfully!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم إنشاء الشحنة بنجاح'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
 
         // Exit multi-select mode
         _exitMultiSelectMode();
@@ -211,23 +243,35 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         _fetchInitialData();
       } else {
         // Error
+        print('Shipment creation failed: ${result.$2}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.$2 ?? 'حدث خطأ في إنشاء الشحنة'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      print('Exception during shipment creation: $e');
+      print('Stack trace: $stackTrace');
+      
+      // Hide loading dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.$2 ?? 'حدث خطأ في إنشاء الشحنة'),
+            content: Text('حدث خطأ: $e'),
             backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
           ),
         );
       }
-    } catch (e) {
-      // Hide loading dialog
-      if (mounted) Navigator.of(context).pop();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -387,7 +431,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                       controller: _tabController,
                       physics: _isMultiSelectMode 
                           ? const NeverScrollableScrollPhysics() 
-                          : const AlwaysScrollableScrollPhysics(),
+                          : const PageScrollPhysics(), // Changed to PageScrollPhysics
                       children: [
                         // Orders Tab
                         _buildOrdersTab(),
@@ -421,11 +465,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                   child: FillButton(
                     label: 'إرسال شحنة (${_selectedOrderIds.length})',
                     onPressed: _sendShipment,
-                    icon: SvgPicture.asset(
-                      'assets/svg/truck.svg',
+                    icon: Icon(
+                      Icons.local_shipping,
                       color: Colors.white,
-                      width: 24,
-                      height: 24,
+                      size: 24,
                     ),
                   ),
                 ),
@@ -446,7 +489,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             child: GestureDetector(
               onTap: () => _tabController.animateTo(0),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 200), // Faster animation
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: _tabController.index == 0
@@ -484,7 +527,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             child: GestureDetector(
               onTap: () => _tabController.animateTo(1),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 200), // Faster animation
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: _tabController.index == 1
@@ -576,6 +619,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     return ordersState.when(
       data: (data) {
         _allOrders = data;
+        print('Loaded ${data.length} orders');
+        data.forEach((order) {
+          print('Order ID: ${order.id}, Code: ${order.code}');
+        });
         return _buildOrdersList(data);
       },
       loading: () => const Center(child: CircularProgressIndicator()),

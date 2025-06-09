@@ -55,8 +55,15 @@ class ShipmentsService {
   Future<(Shipment?, String?)> createPickupShipment(
       Map<String, dynamic> shipmentData) async {
     try {
+      print('ShipmentsService: Sending data to /shipment/pick-up');
+      print('Data: $shipmentData');
+      
       var result = await baseClient.create(
           endpoint: '/shipment/pick-up', data: shipmentData);
+
+      print('ShipmentsService: Response code: ${result.code}');
+      print('ShipmentsService: Response message: ${result.message}');
+      print('ShipmentsService: Response data: ${result.singleData}');
 
       if (result.code == 200 || result.code == 201) {
         return (result.singleData, null);
@@ -64,6 +71,7 @@ class ShipmentsService {
         return (null, result.message ?? 'فشل في إنشاء الشحنة');
       }
     } catch (e) {
+      print('ShipmentsService: Error: $e');
       return (null, e.toString());
     }
   }
