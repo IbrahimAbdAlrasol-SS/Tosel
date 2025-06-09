@@ -43,7 +43,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   bool _isMultiSelectMode = false;
   final Set<String> _selectedOrderIds = {};
   List<Order> _allOrders = [];
+  List<Shipment> _allShipments = [];
   bool _isSelectAll = false;
+  
+  // Loading states
+  bool _ordersLoading = true;
+  bool _shipmentsLoading = true;
+  String? _ordersError;
+  String? _shipmentsError;
   
   // Flag to track if initial data has been loaded
   bool _initialDataLoaded = false;
@@ -63,7 +70,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     super.initState();
     _currentFilter = widget.filter;
     _tabController = TabController(length: 2, vsync: this);
-    _fetchInitialData();
+    
+    // Load data once when screen initializes
+    _loadAllData();
 
     // Listen to tab changes
     _tabController.addListener(() {
@@ -75,9 +84,48 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             _exitMultiSelectMode();
           }
         });
-        // DO NOT fetch data on tab change
       }
     });
+  }
+
+  Future<void> _loadAllData() async {
+    // Load orders
+    try {
+      setState(() => _ordersLoading = true);
+      final ordersResponse = await ref.read(ordersNotifierProvider.notifier).getAll(
+        page: 1,
+        queryParams: _currentFilter?.toJson(),
+      );
+      setState(() {
+        _allOrders = ordersResponse.data ?? [];
+        _ordersLoading = false;
+        _ordersError = null;
+      });
+    } catch (e) {
+      setState(() {
+        _ordersError = e.toString();
+        _ordersLoading = false;
+      });
+    }
+
+    // Load shipments
+    try {
+      setState(() => _shipmentsLoading = true);
+      final shipmentsResponse = await ref.read(shipmentsNotifierProvider.notifier).getAll(
+        page: 1,
+        queryParams: _currentFilter?.toJson(),
+      );
+      setState(() {
+        _allShipments = shipmentsResponse.data ?? [];
+        _shipmentsLoading = false;
+        _shipmentsError = null;
+      });
+    } catch (e) {
+      setState(() {
+        _shipmentsError = e.toString();
+        _shipmentsLoading = false;
+      });
+    }
   }
 
   @override
@@ -653,30 +701,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   }
 
   Widget _buildOrdersTab() {
-    final ordersState = ref.watch(ordersNotifierProvider);
+    if (_ordersLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (_ordersError != null) {
+      return Center(child: Text(_ordersError!));
+    }
 
-    return ordersState.when(
-      data: (data) {
-        _allOrders = data;
-        print('Loaded ${data.length} orders');
-        data.forEach((order) {
-          print('Order ID: ${order.id}, Code: ${order.code}');
-        });
-        return _buildOrdersList(data);
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Center(child: Text(err.toString())),
-    );
+    return _buildOrdersList(_allOrders);
   }
 
   Widget _buildShipmentsTab() {
-    final shipmentsState = ref.watch(shipmentsNotifierProvider);
+    if (_shipmentsLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (_shipmentsError != null) {
+      return Center(child: Text(_shipmentsError!));
+    }
 
-    return shipmentsState.when(
-      data: (data) => _buildShipmentsList(data),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Center(child: Text(err.toString())),
-    );
+    return _buildShipmentsList(_allShipments);
   }
 
   Widget _buildOrdersList(List<Order> data) {
