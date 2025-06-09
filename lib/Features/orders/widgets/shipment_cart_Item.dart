@@ -116,7 +116,6 @@ class ShipmentCartItem extends ConsumerWidget {
                           const Gap(AppSpaces.small),
                           buildSection(
                               "التجار/${shipment.merchantsCount}",
-                              // order.customerName ?? "لايوجد",
                               "assets/svg/User.svg",
                               theme,
                               textColor: Colors.black),

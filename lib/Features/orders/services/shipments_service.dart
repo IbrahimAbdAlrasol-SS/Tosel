@@ -10,7 +10,6 @@ class ShipmentsService {
       : baseClient =
             BaseClient<Shipment>(fromJson: (json) => Shipment.fromJson(json));
 
-  /// جلب جميع الشحنات للتاجر
   Future<ApiResponse<Shipment>> getAll(
       {int page = 1, Map<String, dynamic>? queryParams}) async {
     try {
@@ -51,7 +50,6 @@ class ShipmentsService {
     }
   }
 
-  /// إنشاء شحنة استلام مع قائمة الطلبات
   Future<(Shipment?, String?)> createPickupShipment(
       Map<String, dynamic> shipmentData) async {
     try {

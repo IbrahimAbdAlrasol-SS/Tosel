@@ -44,6 +44,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   final Set<String> _selectedOrderIds = {};
   List<Order> _allOrders = [];
   bool _isSelectAll = false;
+  
+  // Flag to track if initial data has been loaded
+  bool _initialDataLoaded = false;
+  
+  // Flag to track if data has been loaded
+  bool _dataLoaded = false;
 
   Future<void> _refresh() async {
     await ref.read(ordersNotifierProvider.notifier).getAll(
@@ -69,6 +75,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             _exitMultiSelectMode();
           }
         });
+        // DO NOT fetch data on tab change
       }
     });
   }
@@ -81,6 +88,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   }
 
   void _fetchInitialData() {
+    if (_dataLoaded) return; // Prevent refetching if already loaded
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Fetch orders
       ref.read(ordersNotifierProvider.notifier).getAll(
@@ -92,6 +101,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             page: 1,
             queryParams: _currentFilter?.toJson(),
           );
+      
+      _dataLoaded = true; // Mark as loaded
     });
   }
 
@@ -100,6 +111,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     super.didUpdateWidget(oldWidget);
     if (widget.filter != oldWidget.filter) {
       _currentFilter = widget.filter ?? OrderFilter();
+      _dataLoaded = false; // Reset flag to allow new fetch
       _fetchInitialData();
       _refresh();
     }
@@ -239,7 +251,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         // Exit multi-select mode
         _exitMultiSelectMode();
 
-        // Refresh data
+        // Reset data loaded flag and refresh
+        _dataLoaded = false;
         _fetchInitialData();
       } else {
         // Error
@@ -287,6 +300,30 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Add back button if viewing shipment orders
+                  if (_currentFilter?.shipmentId != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => context.pop(),
+                            icon: Icon(
+                              Icons.arrow_back_ios,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          Text(
+                            'طلبات الشحنة ${_currentFilter?.shipmentCode ?? ""}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
                   // Search and Filter Row
                   Row(
                     children: [
@@ -413,11 +450,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                       padding: const EdgeInsets.all(8.0),
                       child: Text(
                         _tabController.index == 0
-                            ? (_currentFilter == null || _currentFilter!.status == null
+                            ? (_currentFilter == null || (_currentFilter!.status == null && _currentFilter!.shipmentId == null)
                                 ? 'جميع الطلبات'
                                 : _currentFilter!.shipmentCode != null
-                                    ? 'جميع الطلبات "${_currentFilter!.shipmentCode}"'
-                                    : 'جميع الطلبات "${orderStatus[_currentFilter!.status!].name}"')
+                                    ? 'طلبات الشحنة "${_currentFilter!.shipmentCode}"'
+                                    : _currentFilter!.shipmentId != null
+                                        ? 'طلبات الشحنة'
+                                        : 'جميع الطلبات "${orderStatus[_currentFilter!.status!].name}"')
                             : (_currentFilter == null || _currentFilter!.status == null
                                 ? 'جميع الوصولات'
                                 : 'جميع الوصولات "${orderStatus[_currentFilter!.status!].name}"'),
@@ -641,9 +680,18 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   }
 
   Widget _buildOrdersList(List<Order> data) {
+    // Filter orders by shipmentId if provided
+    final filteredData = _currentFilter?.shipmentId != null
+        ? data.where((order) => 
+            // You'll need to add shipmentId field to Order model
+            // For now, this is a placeholder
+            true // Replace with: order.shipmentId == _currentFilter?.shipmentId
+          ).toList()
+        : data;
+        
     return Expanded(
       child: GenericPagedListView(
-        key: ValueKey(widget.filter?.toJson()),
+        key: ValueKey('${widget.filter?.toJson()}_${_tabController.index}'),
         noItemsFoundIndicatorBuilder: _buildNoOrdersFound(),
         fetchPage: (pageKey, _) async {
           return await ref.read(ordersNotifierProvider.notifier).getAll(
@@ -734,9 +782,16 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
           },
           itemBuilder: (context, shipment, index) => ShipmentCartItem(
             shipment: shipment,
-            onTap: () => context.push(AppRoutes.orders,
+            onTap: () {
+              // Navigate to orders screen with shipment filter
+              context.push(
+                AppRoutes.orders,
                 extra: OrderFilter(
-                    shipmentId: shipment.id, shipmentCode: shipment.code)),
+                  shipmentId: shipment.id,
+                  shipmentCode: shipment.code,
+                ),
+              );
+            },
           ),
         ),
       ),
