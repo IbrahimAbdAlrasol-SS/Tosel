@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:Tosell/Features/orders/widgets/shipment_cart_Item.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:flutter/material.dart';
@@ -31,10 +32,18 @@ class OrdersScreen extends ConsumerStatefulWidget {
 
 class _OrdersScreenState extends ConsumerState<OrdersScreen>
     with SingleTickerProviderStateMixin {
+    final int _selectedIndex = 0;
+
+  final _refreshKey = GlobalKey<RefreshIndicatorState>();
   late OrderFilter? _currentFilter;
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
-
+Future<void> _refresh() async {
+    await ref.read(ordersNotifierProvider.notifier).getAll(
+          page: 1,
+          queryParams: widget.filter?.toJson(),
+        );
+  }
   @override
   void initState() {
     super.initState();
@@ -80,6 +89,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     if (widget.filter != oldWidget.filter) {
       _currentFilter = widget.filter ?? OrderFilter();
       _fetchInitialData();
+
+      _refresh();
     }
   }
 
@@ -371,57 +382,45 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   }
 
   Widget _buildOrdersList(List<Order> data) {
-    return GenericPagedListView<Order>(
-      key: ValueKey('orders_${_currentFilter?.toJson()}'),
-      noItemsFoundIndicatorBuilder: _buildNoOrdersFound(),
-      fetchPage: (pageKey, _) async {
-        return await ref.read(ordersNotifierProvider.notifier).getAll(
-              page: pageKey,
-              queryParams: _currentFilter?.toJson(),
-            );
-      },
-      itemBuilder: (context, order, index) => OrderCardItem(
-        order: order,
-        onTap: () => context.push(AppRoutes.orderDetails, extra: order.code),
+    return Expanded(
+      child: GenericPagedListView(
+        key: ValueKey(widget.filter?.toJson()),
+        noItemsFoundIndicatorBuilder: _buildNoOrdersFound(),
+        fetchPage: (pageKey, _) async {
+          return await ref.read(ordersNotifierProvider.notifier).getAll(
+                page: pageKey,
+                queryParams: _currentFilter?.toJson(),
+              );
+        },
+        itemBuilder: (context, order, index) => OrderCardItem(
+          order: order,
+          onTap: () => context.push(AppRoutes.orderDetails, extra: order.id),
+        ),
       ),
     );
   }
 
   Widget _buildShipmentsList(List<Shipment> data) {
-    return GenericPagedListView<Shipment>(
-      key: ValueKey('shipments_${_currentFilter?.toJson()}'),
-      noItemsFoundIndicatorBuilder: _buildNoShipmentsFound(),
-      fetchPage: (pageKey, _) async {
-        return await ref.read(shipmentsNotifierProvider.notifier).getAll(
-              page: pageKey,
-              queryParams: _currentFilter?.toJson(),
-            );
-      },
-      itemBuilder: (context, shipment, index) => OrderCardItem(
-        order: Order(
-          id: shipment.id,
-          code: shipment.code,
-          status: shipment.status,
-          creationDate: shipment.creationDate,
-          customerName: 'وصل ${shipment.code}',
-          content: 'عدد الطلبات: ${shipment.ordersCount ?? 0}',
-          deliveryZone: null,
-          customerPhoneNumber: null,
-          pickupZone: null,
-          merchant: null,
-          amount: null,
-          size: null,
-          isPaid: null,
-          priority: null,
-          partialDelivery: null,
-          deleted: null,
-          onTap: () => context.push(AppRoutes.orders,
-              extra: OrderFilter(
-                  shipmentId: shipment.id, shipmentCode: shipment.code)),
+    return Expanded(
+      child: RefreshIndicator(
+        key: _refreshKey,
+        onRefresh: _refresh,
+        child: GenericPagedListView(
+          noItemsFoundIndicatorBuilder: _buildNoShipmentsFound(),
+          fetchPage: (pageKey, _) async {
+            return await ref.read(shipmentsNotifierProvider.notifier).getAll(
+                  page: pageKey,
+                  queryParams: widget.filter?.toJson(),
+                );
+          },
+          itemBuilder: (context, shipment, index) => ShipmentCartItem(
+            shipment: shipment,
+            onTap: () => context.push(AppRoutes.orders,
+                extra: OrderFilter(
+                    shipmentId: shipment.id, shipmentCode: shipment.code)),
+            // context.push(AppRoutes.orderDetails, extra: data[index].code),
+          ),
         ),
-        onTap: () => context.push(AppRoutes.orders,
-            extra: OrderFilter(
-                shipmentId: shipment.id, shipmentCode: shipment.code)),
       ),
     );
   }
